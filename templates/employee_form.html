@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Editează' if emp else 'Adaugă' }} Angajat{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-6">
+    <div class="card">
+      <div class="card-header">
+        <i class="bi bi-person-{{ 'gear' if emp else 'plus' }} me-2"></i>
+        {{ 'Editează Angajat' if emp else 'Angajat Nou' }}
+      </div>
+      <div class="card-body">
+        <form method="post">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Nume și Prenume <span class="text-danger">*</span></label>
+            <input type="text" name="name" class="form-control" required
+                   value="{{ emp.name if emp else '' }}" placeholder="ex: Popescu Ion">
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Funcție</label>
+            <input type="text" name="position" class="form-control"
+                   value="{{ emp.position if emp else '' }}" placeholder="ex: Programator">
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Departament</label>
+            <input type="text" name="department" class="form-control"
+                   value="{{ emp.department if emp else '' }}" placeholder="ex: IT">
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">CNP</label>
+            <input type="text" name="cnp" class="form-control" maxlength="13"
+                   value="{{ emp.cnp if emp else '' }}" placeholder="13 cifre">
+          </div>
+          {% if emp %}
+          <div class="mb-3 form-check">
+            <input type="checkbox" class="form-check-input" name="active" id="active"
+                   {{ 'checked' if emp.active }}>
+            <label class="form-check-label" for="active">Angajat activ</label>
+          </div>
+          {% endif %}
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-check-lg me-1"></i>Salvează
+            </button>
+            <a href="{{ url_for('employees') }}" class="btn btn-outline-secondary">Anulează</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

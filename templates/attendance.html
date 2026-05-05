@@ -1,0 +1,261 @@
+{% extends "base.html" %}
+{% block title %}Pontaj {{ month_name }} {{ year }}{% endblock %}
+
+{% block content %}
+{# ── header ── #}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+  <h4 class="mb-0">
+    <i class="bi bi-table me-2"></i>Pontaj &mdash; {{ month_name }} {{ year }}
+  </h4>
+  <div class="d-flex flex-wrap gap-2 align-items-center">
+    {# month navigation #}
+    <a href="{{ url_for('attendance', year=prev_year, month=prev_month) }}"
+       class="btn btn-outline-secondary btn-sm"><i class="bi bi-chevron-left"></i></a>
+    <a href="{{ url_for('attendance', year=next_year, month=next_month) }}"
+       class="btn btn-outline-secondary btn-sm"><i class="bi bi-chevron-right"></i></a>
+
+    {# init button #}
+    <form method="post" action="{{ url_for('attendance_init', year=year, month=month) }}" class="d-inline">
+      <button type="submit" class="btn btn-outline-info btn-sm"
+              title="Completează automat zilele lucrătoare cu P, weekend cu LS, sărbători cu SL">
+        <i class="bi bi-magic me-1"></i>Inițializează
+      </button>
+    </form>
+
+    {# scan form button #}
+    <button class="btn btn-outline-warning btn-sm" data-bs-toggle="modal" data-bs-target="#scanModal"
+            title="Încarcă o poză a cererii de concediu">
+      <i class="bi bi-camera me-1"></i>Scanează Cerere
+    </button>
+
+    {# export #}
+    <a href="{{ url_for('export_pontaj', year=year, month=month) }}" class="btn btn-success btn-sm">
+      <i class="bi bi-file-earmark-excel me-1"></i>Export Excel
+    </a>
+  </div>
+</div>
+
+{# last-day reminder #}
+{% if today == last_day %}
+<div class="alert alert-warning d-flex align-items-center mb-3">
+  <i class="bi bi-exclamation-triangle-fill me-2 fs-5"></i>
+  <div>Astăzi este <strong>ultima zi a lunii</strong>. Nu uitați să exportați pontajul pentru contabilitate!</div>
+</div>
+{% endif %}
+
+{% if not employees %}
+<div class="card text-center py-5 text-muted">
+  <i class="bi bi-people display-4 d-block mb-3"></i>
+  Nu există angajați activi. <a href="{{ url_for('employee_new') }}">Adaugă un angajat</a> pentru a începe.
+</div>
+{% else %}
+
+{# ── attendance grid ── #}
+<form method="post" action="{{ url_for('attendance_save', year=year, month=month) }}">
+<div class="card mb-3">
+  <div class="card-body p-0" style="overflow-x:auto;">
+    <table class="table table-bordered table-sm mb-0 align-middle" style="min-width:900px;font-size:.78rem;">
+      <thead>
+        <tr class="table-dark text-center">
+          <th class="sticky-col" style="min-width:160px;text-align:left!important;padding-left:8px;">Angajat</th>
+          {% for d in days %}
+            {% set is_we = d.weekday() >= 5 %}
+            {% set is_hol = d in holidays %}
+            <th class="{{ 'table-secondary' if is_we else ('table-info' if is_hol else '') }}"
+                style="min-width:32px;padding:2px;"
+                title="{{ d.strftime('%d.%m.%Y') }}{% if is_hol %} — {{ holidays[d] }}{% endif %}">
+              <div>{{ d.day }}</div>
+              <div style="font-size:.6rem;opacity:.7;">{{ ['L','Ma','Mi','J','V','S','D'][d.weekday()] }}</div>
+            </th>
+          {% endfor %}
+          <th style="min-width:42px;" title="Zile lucrate">Lucr.</th>
+          <th style="min-width:36px;background:#fff2cc;" title="Concediu Odihnă">CO</th>
+          <th style="min-width:36px;background:#fce4d6;" title="Concediu Medical">CM</th>
+          <th style="min-width:36px;background:#f4cccc;" title="Nemotivat">NN</th>
+          <th style="min-width:36px;" title="Alte absențe">Alte</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for emp in employees %}
+        {% set emp_records = records.get(emp.id, {}) %}
+        <tr>
+          <td style="white-space:nowrap;font-weight:600;">{{ emp.name }}</td>
+
+          {% set worked = namespace(val=0) %}
+          {% set co = namespace(val=0) %}
+          {% set cm = namespace(val=0) %}
+          {% set nn = namespace(val=0) %}
+          {% set other = namespace(val=0) %}
+
+          {% for d in days %}
+            {% set is_we = d.weekday() >= 5 %}
+            {% set is_hol = d in holidays %}
+            {% if is_we %}{% set default_s = 'LS' %}
+            {% elif is_hol %}{% set default_s = 'SL' %}
+            {% else %}{% set default_s = 'P' %}{% endif %}
+            {% set status = emp_records.get(d, default_s) %}
+
+            {# accumulate #}
+            {% if status == 'P' %}{% set worked.val = worked.val + 1 %}
+            {% elif status == 'CO' %}{% set co.val = co.val + 1 %}
+            {% elif status == 'CM' %}{% set cm.val = cm.val + 1 %}
+            {% elif status == 'NN' %}{% set nn.val = nn.val + 1 %}
+            {% elif status not in ('LS','SL','P') %}{% set other.val = other.val + 1 %}{% endif %}
+
+            {% set cell_bg = {
+              'CO':  '#fff2cc',
+              'CM':  '#fce4d6',
+              'CFP': '#ddebf7',
+              'CIC': '#e2efda',
+              'DO':  '#d9d2e9',
+              'REC': '#d9ead3',
+              'NN':  '#f4cccc',
+              'SL':  '#cfe2f3',
+              'LS':  '#efefef',
+            }.get(status, '#ffffff') %}
+
+            <td style="padding:1px 2px;background:{{ cell_bg }};text-align:center;">
+              <select name="status_{{ emp.id }}_{{ d.isoformat() }}"
+                      class="pontaj-sel"
+                      data-default="{{ default_s }}"
+                      style="width:100%;border:none;background:transparent;font-size:.7rem;
+                             text-align:center;cursor:pointer;padding:0;"
+                      onchange="colorCell(this)">
+                {% for code, label in statuses.items() %}
+                <option value="{{ code }}"
+                  {{ 'selected' if status == code }}>{{ code }}</option>
+                {% endfor %}
+              </select>
+            </td>
+          {% endfor %}
+
+          <td class="text-center fw-bold" style="background:#e2efda;">{{ worked.val }}</td>
+          <td class="text-center" style="background:#fff2cc;">{{ co.val if co.val else '' }}</td>
+          <td class="text-center" style="background:#fce4d6;">{{ cm.val if cm.val else '' }}</td>
+          <td class="text-center" style="background:#f4cccc;">{{ nn.val if nn.val else '' }}</td>
+          <td class="text-center">{{ other.val if other.val else '' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="d-flex justify-content-between align-items-center">
+  {# legend #}
+  <div class="d-flex flex-wrap gap-2" style="font-size:.72rem;">
+    {% for code, label in statuses.items() %}
+    {% set colors = {
+      'CO': '#fff2cc', 'CM': '#fce4d6', 'CFP': '#ddebf7',
+      'CIC': '#e2efda', 'DO': '#d9d2e9', 'REC': '#d9ead3',
+      'NN': '#f4cccc', 'SL': '#cfe2f3', 'LS': '#efefef', 'P': '#ffffff'
+    } %}
+    <span style="background:{{ colors.get(code,'#eee') }};padding:2px 7px;border-radius:4px;border:1px solid #ddd;">
+      <strong>{{ code }}</strong> = {{ label }}
+    </span>
+    {% endfor %}
+  </div>
+  <button type="submit" class="btn btn-primary">
+    <i class="bi bi-floppy me-1"></i>Salvează Pontajul
+  </button>
+</div>
+</form>
+{% endif %}
+
+{# ── scan modal ── #}
+<div class="modal fade" id="scanModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header" style="background:#1a3a5c;color:#fff;">
+        <h5 class="modal-title"><i class="bi bi-camera me-2"></i>Scanează Cerere de Concediu</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted small mb-3">
+          Fotografiați cererea de concediu completată de angajat și încărcați imaginea.
+          Sistemul va extrage automat datele și va actualiza pontajul.
+        </p>
+        <form id="scanForm" enctype="multipart/form-data">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Imagine cerere concediu</label>
+            <input type="file" class="form-control" id="scanFile" name="image"
+                   accept="image/*" capture="environment" required>
+          </div>
+          <div id="scanPreview" class="mb-3 d-none text-center">
+            <img id="previewImg" src="" alt="preview" style="max-height:260px;border-radius:8px;border:1px solid #ddd;">
+          </div>
+          <button type="submit" class="btn btn-warning">
+            <i class="bi bi-search me-1"></i>Analizează și Completează
+          </button>
+        </form>
+
+        <div id="scanResult" class="mt-3"></div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// color selects on load and change
+const BG = {
+  CO:'#fff2cc', CM:'#fce4d6', CFP:'#ddebf7', CIC:'#e2efda',
+  DO:'#d9d2e9', REC:'#d9ead3', NN:'#f4cccc', SL:'#cfe2f3', LS:'#efefef', P:'#ffffff'
+};
+function colorCell(sel) {
+  sel.parentElement.style.background = BG[sel.value] || '#ffffff';
+}
+document.querySelectorAll('.pontaj-sel').forEach(colorCell);
+
+// image preview
+document.getElementById('scanFile').addEventListener('change', function() {
+  const file = this.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    document.getElementById('previewImg').src = e.target.result;
+    document.getElementById('scanPreview').classList.remove('d-none');
+  };
+  reader.readAsDataURL(file);
+});
+
+// scan form submit
+document.getElementById('scanForm').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const fd = new FormData(this);
+  const btn = this.querySelector('button[type=submit]');
+  const resultDiv = document.getElementById('scanResult');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Se analizează...';
+  resultDiv.innerHTML = '';
+
+  try {
+    const resp = await fetch('/pontaj/{{ year }}/{{ month }}/scan', {
+      method: 'POST',
+      body: fd,
+    });
+    const data = await resp.json();
+    if (data.error) {
+      resultDiv.innerHTML = `<div class="alert alert-danger">${data.error}</div>`;
+    } else {
+      resultDiv.innerHTML = `
+        <div class="alert alert-success">
+          <strong><i class="bi bi-check-circle me-1"></i>Extras cu succes!</strong><br>
+          <b>Angajat:</b> ${data.employee}<br>
+          <b>Tip concediu:</b> ${data.leave_type}<br>
+          <b>Perioadă:</b> ${data.start_date} → ${data.end_date}<br>
+          <b>Zile actualizate:</b> ${data.days_updated}
+          ${data.warnings ? '<br><span class="text-warning">⚠ ' + data.warnings + '</span>' : ''}
+        </div>`;
+      setTimeout(() => location.reload(), 2000);
+    }
+  } catch(err) {
+    resultDiv.innerHTML = `<div class="alert alert-danger">Eroare de comunicare: ${err.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-search me-1"></i>Analizează și Completează';
+  }
+});
+</script>
+{% endblock %}
