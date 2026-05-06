@@ -17,32 +17,46 @@ def _client():
     return _CLIENT
 
 
-_PROMPT = """You are helping a Romanian company's HR system extract data from a scanned leave request form (cerere de concediu).
+_PROMPT = """You are an HR assistant for a Romanian company. You are reading a scanned or photographed Romanian leave request form (cerere de concediu).
 
-Analyze the image and extract:
-1. Employee full name (Nume și Prenume)
-2. Leave type — map to one of these codes:
-   CO = Concediu Odihnă (annual/vacation leave)
-   CM = Concediu Medical (sick leave)
-   CFP = Concediu Fără Plată (unpaid leave)
-   CIC = Concediu Îngrijire Copil (parental/child care)
-   DO = Delegație (business trip)
-   REC = Recuperare (compensatory leave)
-3. Start date (first day of leave)
-4. End date (last day of leave, inclusive)
+The form is typically structured like this (fields may be handwritten):
+  - "De la:" or "Subsemnatul(a):" → employee full name
+  - "Funcția:" → job title (not needed)
+  - "Cerere concediu de odihnă" = annual leave | "concediu medical" = sick leave | "concediu fără plată" = unpaid | "delegație" = business trip
+  - "în perioada:" followed by a START DATE and an END DATE written as DD.MM.YYYY
+  - "respectiv X zile lucrătoare" → number of working days (useful for validation)
 
-Reply ONLY with valid JSON in this exact format (no extra text):
+Your task — extract ONLY these fields:
+
+1. employee_name: Full name as written in "De la:" or "Subsemnatul(a):" (e.g. "DOBOS LEVENTE")
+2. leave_type: One of these codes:
+     CO  = Concediu Odihnă (annual/vacation leave — most common)
+     CM  = Concediu Medical (sick leave / medical certificate)
+     CFP = Concediu Fără Plată (unpaid leave)
+     CIC = Concediu Îngrijire Copil (parental / child care)
+     DO  = Delegație (business trip / work travel)
+     REC = Recuperare (compensatory rest day)
+     NN  = Nemotivat (unjustified absence)
+3. start_date: First day of leave in ISO format YYYY-MM-DD
+4. end_date:   Last day of leave (inclusive) in ISO format YYYY-MM-DD
+   — If only one date is written, start_date == end_date
+   — Dates in the form are written as DD.MM.YYYY — convert carefully
+
+Reply ONLY with a single valid JSON object, no markdown, no explanation:
 {
   "employee_name": "...",
   "leave_type": "CO",
   "start_date": "YYYY-MM-DD",
   "end_date": "YYYY-MM-DD",
+  "working_days": <integer or null>,
   "confidence": "high|medium|low",
-  "notes": "any relevant notes or uncertainties"
+  "notes": "..."
 }
 
-If you cannot read the form clearly, still return JSON with your best guess and set confidence to "low".
-If a field is completely unreadable, use null for that field."""
+Rules:
+- If a date is partially illegible, make your best guess based on context.
+- If you cannot determine a field at all, use null.
+- Set confidence "high" when all fields are clearly legible, "medium" for minor uncertainty, "low" when significant parts are unreadable."""
 
 
 def extract_leave_from_image(image_bytes: bytes, mime_type: str = "image/jpeg") -> dict:
