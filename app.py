@@ -7,7 +7,7 @@ from io import BytesIO
 
 from models import STATUSES, AttendanceRecord, Employee, db
 from holidays_ro import get_public_holidays, is_working_day
-from report import generate_pontaj, _month_name_ro
+from report import generate_foaie, _MONTH_NAMES
 
 app = Flask(__name__)
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///pontaj.db"
@@ -142,7 +142,7 @@ def attendance(year, month):
         "attendance.html",
         year=year,
         month=month,
-        month_name=_month_name_ro(month),
+        month_name=_MONTH_NAMES[month - 1],
         employees=employees,
         days=days,
         holidays=holidays,
@@ -153,6 +153,8 @@ def attendance(year, month):
         next_year=next_month_day.year,
         next_month=next_month_day.month,
         last_day=_last_day_of_month(year, month),
+        sheets_configured=_sheets_configured(),
+        sheet_url=_sheet_url(),
     )
 
 
@@ -200,8 +202,9 @@ def export_pontaj(year, month):
     year, month = _parse_ym(str(year), str(month))
     employees = Employee.query.filter_by(active=True).order_by(Employee.name).all()
     records = _records_map(year, month)
-    xlsx_bytes = generate_pontaj(year, month, employees, records)
-    filename = f"Pontaj_{_month_name_ro(month)}_{year}.xlsx"
+    xlsx_bytes = generate_foaie(year, month, employees, records)
+    month_name = _MONTH_NAMES[month - 1]
+    filename = f"Foaie_Prezenta_{month_name}_{year}.xlsx"
     return send_file(
         BytesIO(xlsx_bytes),
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -343,6 +346,33 @@ def scan_leave_form(year, month):
         confidence=extracted.get("confidence"),
         warnings="; ".join(warnings) if warnings else None,
     )
+
+
+# ── Google Sheets helpers ─────────────────────────────────────────────────────
+
+def _sheets_configured():
+    from sheets import is_sheets_configured
+    return is_sheets_configured()
+
+
+def _sheet_url():
+    from sheets import get_sheet_url
+    return get_sheet_url()
+
+
+@app.route("/pontaj/<int:year>/<int:month>/sync-sheets", methods=["POST"])
+def sync_to_sheets(year, month):
+    year, month = _parse_ym(str(year), str(month))
+    employees = Employee.query.filter_by(active=True).order_by(Employee.name).all()
+    records = _records_map(year, month)
+    try:
+        from sheets import sync_month_to_sheets
+        url = sync_month_to_sheets(year, month, employees, records)
+        flash(f'Pontajul a fost sincronizat cu Google Sheets. '
+              f'<a href="{url}" target="_blank">Deschide foaia</a>', "success")
+    except Exception as exc:
+        flash(f"Eroare sincronizare Google Sheets: {exc}", "danger")
+    return redirect(url_for("attendance", year=year, month=month))
 
 
 if __name__ == "__main__":
